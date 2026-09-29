@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Universal Streaming Hub</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui; background:#05060a; color:#fff; margin:0; }
+    header { padding:16px 24px; border-bottom:1px solid #222; display:flex; justify-content:space-between; align-items:center; }
+    .logo { font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:16px; padding:24px; }
+    .card { background:#111; border-radius:10px; overflow:hidden; border:1px solid #222; cursor:pointer; }
+    .card img { width:100%; height:260px; object-fit:cover; display:block; }
+    .card-body { padding:10px 12px 14px; }
+    .title { font-size:15px; font-weight:600; margin-bottom:4px; }
+    .meta { font-size:12px; color:#aaa; }
+    .player-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.8); display:flex; align-items:center; justify-content:center; }
+    .player { width:90%; max-width:900px; background:#05060a; border-radius:12px; border:1px solid #333; overflow:hidden; }
+    .player-header { padding:10px 14px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #222; }
+    .player-title { font-size:15px; font-weight:600; }
+    .close-btn { border:none; background:#222; color:#fff; padding:4px 10px; border-radius:999px; cursor:pointer; font-size:12px; }
+    video { width:100%; height:auto; background:#000; }
+    .episode-btn { background:#222; color:#fff; border:none; padding:6px 12px; border-radius:6px; margin:4px 0; cursor:pointer; width:100%; text-align:left; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">Universal Streaming Hub</div>
+    <div style="font-size:12px;color:#aaa;">GitLab · Streamables</div>
+  </header>
+
+  <main>
+    <section class="grid" id="grid"></section>
+  </main>
+
+  <div id="player-root" style="display:none;"></div>
+
+  <script>
+    // 🔧 CONFIG — replace these with your GitLab project info
+    const PROJECT_ID = "jansontrevino2/Universal Streaming Hub";
+    const REF = "main";
+
+    // Build raw GitLab URL
+    function rawUrl(path) {
+      return `https://gitlab.com/${87049279}/-/raw/${REF}/${path}`;
+    }
+
+    // Load folder list
+    async function loadTree(path) {
+      const url = `https://gitlab.com/api/v4/projects/${encodeURIComponent(PROJECT_ID)}/repository/tree?path=${encodeURIComponent(path)}&per_page=100`;
+      const res = await fetch(url);
+      return res.json();
+    }
+
+    // Load info.json
+    async function loadInfo(path) {
+      const url = `https://gitlab.com/api/v4/projects/${encodeURIComponent(PROJECT_ID)}/repository/files/${encodeURIComponent(path)}/raw?ref=${REF}`;
+      const res = await fetch(url);
+      return res.json();
+    }
+
+    async function loadStreamables() {
+      const grid = document.getElementById("grid");
+      grid.innerHTML = "Loading…";
+
+      const folders = await loadTree("Streamables");
+      grid.innerHTML = "";
+
+      for (const item of folders) {
+        if (item.type !== "tree") continue;
+
+        const infoPath = `Streamables/${item.name}/info.json`;
+        let info;
+
+        try {
+          info = await loadInfo(infoPath);
+        } catch {
+          continue;
+        }
+
+        const coverUrl = rawUrl(`Streamables/${item.name}/${info.cover}`);
+
+        // 🎬 MOVIE
+        if (info.type === "movie") {
+          const videoUrl = rawUrl(`Streamables/${item.name}/${info.file}`);
+
+          const card = document.createElement("article");
+          card.className = "card";
+          card.innerHTML = `
+            <img src="${coverUrl}">
+            <div class="card-body">
+              <div class="title">${info.title}</div>
+              <div class="meta">Movie</div>
+            </div>
+          `;
+          card.onclick = () => openPlayer(info.title, videoUrl);
+          grid.appendChild(card);
+        }
+
+        // 📺 SHOW
+        if (info.type === "show") {
+          const card = document.createElement("article");
+          card.className = "card";
+          card.innerHTML = `
+            <img src="${coverUrl}">
+            <div class="card-body">
+              <div class="title">${info.title}</div>
+              <div class="meta">Show · ${info.episodes.length} episodes</div>
+            </div>
+          `;
+          card.onclick = () => openShow(info, item.name);
+          grid.appendChild(card);
+        }
+      }
+    }
+
+    // 🎬 Movie player
+    function openPlayer(title, src) {
+      const root = document.getElementById("player-root");
+      root.style.display = "block";
+      root.innerHTML = `
+        <div class="player-backdrop" onclick="closePlayer(event)">
+          <div class="player" onclick="event.stopPropagation()">
+            <div class="player-header">
+              <div class="player-title">${title}</div>
+              <button class="close-btn" onclick="closePlayer(event)">Close</button>
+            </div>
+            <video controls autoplay src="${src}"></video>
+          </div>
+        </div>
+      `;
+    }
+
+    // 📺 Show episode selector
+    function openShow(info, folderName) {
+      const root = document.getElementById("player-root");
+      root.style.display = "block";
+
+      let episodeButtons = "";
+      for (const ep of info.episodes) {
+        const epUrl = rawUrl(`Streamables/${folderName}/${ep}`);
+        episodeButtons += `
+          <button class="episode-btn" onclick="openPlayer('${info.title} - ${ep}', '${epUrl}')">
+            ${ep}
+          </button>
+        `;
+      }
+
+      root.innerHTML = `
+        <div class="player-backdrop" onclick="closePlayer(event)">
+          <div class="player" onclick="event.stopPropagation()">
+            <div class="player-header">
+              <div class="player-title">${info.title}</div>
+              <button class="close-btn" onclick="closePlayer(event)">Close</button>
+            </div>
+            <div style="padding:16px;">
+              <div style="margin-bottom:10px;font-size:14px;">Episodes</div>
+              ${episodeButtons}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function closePlayer(e) {
+      e.stopPropagation();
+      const root = document.getElementById("player-root");
+      root.style.display = "none";
+      root.innerHTML = "";
+    }
+
+    loadStreamables();
+  </script>
+</body>
+</html>
